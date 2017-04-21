@@ -1,6 +1,7 @@
 appdirs==1.4.3
 Keras==2.0.3
 numpy==1.12.1
+opencv-python==3.2.0.7
 packaging==16.8
 pandas==0.19.2
 pkg-resources==0.0.0
@@ -13,3 +14,4 @@ scipy==0.19.0
 six==1.10.0
 tensorflow-gpu==1.0.1
 Theano==0.9.0
+tqdm==4.11.2
