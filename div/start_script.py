@@ -1,45 +1,16 @@
 # https://www.kaggle.com/anokas/planet-understanding-the-amazon-from-space/simple-keras-starter
 import numpy as np # linear algebra
-import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
-import os
-import gc
 
-import keras as k
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Flatten
 from keras.layers import Conv2D, MaxPooling2D
 
-import cv2
-from tqdm import tqdm
+import sys
+sys.path.append("../code/")
+import util
 
-x_train = []
-x_test = []
-y_train = []
+x_train, x_valid, y_train, y_valid = util.get_data()
 
-df_train = pd.read_csv('../input/train.csv')
-
-flatten = lambda l: [item for sublist in l for item in sublist]
-labels = list(set(flatten([l.split(' ') for l in df_train['tags'].values])))
-
-label_map = {l: i for i, l in enumerate(labels)}
-inv_label_map = {i: l for l, i in label_map.items()}
-
-for f, tags in tqdm(df_train.values[:20000], miniters=1000):
-    img = cv2.imread('../input/train-jpg/{}.jpg'.format(f))
-    targets = np.zeros(17)
-    for t in tags.split(' '):
-        targets[label_map[t]] = 1 
-    x_train.append(cv2.resize(img, (32, 32)))
-    y_train.append(targets)
-    
-y_train = np.array(y_train, np.uint8)
-x_train = np.array(x_train, np.float16) / 255.
-
-print(x_train.shape)
-print(y_train.shape)
-
-split = 15000
-x_train, x_valid, y_train, y_valid = x_train[:split], x_train[split:], y_train[:split], y_train[split:]
 
 model = Sequential()
 model.add(Conv2D(32, kernel_size=(3, 3),
