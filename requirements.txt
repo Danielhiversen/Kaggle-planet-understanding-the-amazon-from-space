@@ -2,9 +2,11 @@ appdirs==1.4.3
 h5py==2.7.0
 Keras==2.0.3
 numpy==1.12.1
+olefile==0.44
 opencv-python==3.2.0.7
 packaging==16.8
 pandas==0.19.2
+Pillow==4.1.1
 pkg-resources==0.0.0
 protobuf==3.2.0
 pyparsing==2.2.0
