@@ -4,12 +4,16 @@ import os
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
 import pickle
 
+from cv2.cv2 import imshow, waitKey
 from keras import backend as K
 from keras.callbacks import Callback
 from keras.optimizers import Adam
 from keras.layers import Layer, BatchNormalization, Activation, merge, Conv2D, Dropout, MaxPooling2D, AveragePooling2D, MaxPooling3D, AveragePooling3D, Conv3D
 from keras.regularizers import l2
+from matplotlib import pylab
 from tqdm import tqdm
+
+from code import config
 
 
 def get_data():
@@ -18,35 +22,94 @@ def get_data():
         with open(filename, 'rb') as handle:
             x_train, x_valid, y_train, y_valid = pickle.load(handle)
     else:
-        x_train = []
-        x_test = []
-        y_train = []
+        x_train, x_valid, y_train, y_valid = getDataFromFile()
 
-        df_train = pd.read_csv('../input/train.csv')
-        flatten = lambda l: [item for sublist in l for item in sublist]
-        labels = list(set(flatten([l.split(' ') for l in df_train['tags'].values])))
+        if config.net_config['augment']:
+            x_train, x_valid, y_train, y_valid = createAugmentedData(x_train, x_valid, y_train, y_valid)
 
-        label_map = {l: i for i, l in enumerate(labels)}
-
-        for f, tags in tqdm(df_train.values[:20000], miniters=1000):
-            img = cv2.imread('../input/train-jpg/{}.jpg'.format(f))
-            targets = np.zeros(17)
-            for t in tags.split(' '):
-                targets[label_map[t]] = 1
-            x_train.append(cv2.resize(img, (32, 32)))
-            y_train.append(targets)
-
-        y_train = np.array(y_train, np.uint8)
-        x_train = np.array(x_train, np.float16) / 255.
-
-        print(x_train.shape)
-        print(y_train.shape)
-
-        split = 15000
-        x_train, x_valid, y_train, y_valid = x_train[:split], x_train[split:], y_train[:split], y_train[split:]
         with open(filename, 'wb') as f:
             pickle.dump((x_train, x_valid, y_train, y_valid), f)
+
     return x_train, x_valid, y_train, y_valid
+
+
+def createAugmentedData(x_train, x_valid, y_train, y_valid):
+    positive_counter = 0
+    negative_counter = 0
+    x_train_b = []
+    y_train_b = []
+    for img, targets in zip(x_train, y_train):
+
+        target = targets  # [14:15]
+
+        if False and target == 0 and negative_counter < positive_counter:
+            x_train_b.append(img)
+            y_train_b.append(target)
+            negative_counter += 1
+
+        else:
+            x_train_b.append(img)
+            y_train_b.append(target)
+
+            x_train_b.append(np.rot90(img))
+            y_train_b.append(target)
+
+            x_train_b.append(np.flip(img, 1))
+            y_train_b.append(target)
+
+            positive_counter += 3
+    x_train = np.array(x_train_b)
+    y_train = np.array(y_train_b)
+    x_valid_b = []
+    y_valid_b = []
+    for img, targets in zip(x_valid, y_valid):
+        target = targets  # [14:15]
+        x_valid_b.append(img)
+        y_valid_b.append(target)
+    x_valid = np.array(x_valid_b)
+    y_valid = np.array(y_valid_b)
+    return x_train, x_valid, y_train, y_valid
+
+
+def getDataFromFile():
+    x_train = []
+    y_train = []
+    df_train = pd.read_csv('../input/train.csv')
+    flatten = lambda l: [item for sublist in l for item in sublist]
+    labels = list(set(flatten([l.split(' ') for l in df_train['tags'].values])))
+    label_map = {l: i for i, l in enumerate(labels)}
+    for f, tags in tqdm(df_train.values[:20000], miniters=1000):
+        img = cv2.imread('../input/train-jpg/{}.jpg'.format(f))
+        targets = np.zeros(17)
+        for t in tags.split(' '):
+            targets[label_map[t]] = 1
+
+        img = cv2.resize(img, (64, 64))
+        showImage(np.array(img, np.float32), tags)
+
+        # img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        # img = cv2.equalizeHist(img)
+
+
+        x_train.append(img)
+        y_train.append(targets)
+    y_train = np.array(y_train, np.uint8)
+    x_train = np.array(x_train, np.float16) / 255.
+    if x_train.ndim < 3:
+        x_train = np.expand_dims(x_train, axis=3)
+    print(x_train.shape)
+    print(y_train.shape)
+    split = int(len(y_train) * 0.75)
+    x_train, x_valid, y_train, y_valid = x_train[:split], x_train[split:], y_train[:split], y_train[split:]
+    return x_train, x_valid, y_train, y_valid
+
+def showImage(img, tags):
+    import matplotlib.pyplot as plt
+    plt.imshow(img)
+    fig = pylab.gcf()
+    fig.canvas.set_window_title(tags)
+    plt.show()
+
 
 # https://github.com/ypeleg/keras/blob/67eb00d42cd2f0a5ec0ac7aadc6ba6a276b714e6/keras/noisy_optimizers.py
 def noisy_gradient(gradient, noise):

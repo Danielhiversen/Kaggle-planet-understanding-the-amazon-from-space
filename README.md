@@ -8,3 +8,7 @@ https://www.kaggle.com/anokas/planet-understanding-the-amazon-from-space/
 * pip install -r requirements.txt
 * cd div
 * python start_script.py 
+
+
+If tensorflow has trouple finding linked files:
+export TF_BINARY_URL=https://storage.googleapis.com/tensorflow/linux/gpu/tensorflow-0.10.0-cp27-none-linux_x86_64.whl

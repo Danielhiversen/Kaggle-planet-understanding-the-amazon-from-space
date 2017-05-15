@@ -3,26 +3,31 @@ import numpy as np  # linear algebra
 
 import keras.backend as K
 from keras.models import Input, Model
-from keras.layers import Dense, Dropout, Flatten
+from keras.layers import Dense, Dropout, Flatten, regularizers
 from keras.layers import Conv2D, MaxPooling2D
 from keras.callbacks import ModelCheckpoint
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, accuracy_score
 
 import util
 import config
 
 
 def get_model(nc, input_shape):
-    activation = nc.get('activation', 0)
-    batchnormalization = nc.get('batchnormalization', 0)
-
     inputs = Input(shape=input_shape, name='image_input')
 
-    x = util.get_block(inputs, nc, batchnormalization, activation, nb_filter1=32, nb_filter2=32, dropout1=0, dropout2=0, pooling=0)
-    x = util.get_block(x, nc, batchnormalization, activation, 64, 64, nc['dropout'], nc.get('dropout2', 0), nc.get('pooling', 'max'))
-
+    x = inputs
+    x = Conv2D(64, (3, 3), kernel_initializer=nc['kernel_initializer'], activation='relu')(x)
+    x = MaxPooling2D(pool_size=(2, 2))(x)
+    x = Conv2D(32, (3, 3), kernel_initializer=nc['kernel_initializer'], activation='relu')(x)
+    x = MaxPooling2D(pool_size=(2, 2))(x)
+    x = Conv2D(16, (3, 3), kernel_initializer=nc['kernel_initializer'], activation='relu')(x)
+    x = MaxPooling2D(pool_size=(2, 2))(x)
+    x = Dropout(0.01)(x)
     x = Flatten()(x)
-    x = Dense(128, activation='relu')(x)
-    x = Dropout(0.5)(x)
+    x = Dense(200, activation='relu', kernel_regularizer=regularizers.l2(0.001))(x)
+    x = Dense(100, activation='relu', kernel_regularizer=regularizers.l2(0.001))(x)
+    x = Dense(50, activation='relu', kernel_regularizer=regularizers.l2(0.001))(x)
+
     x = Dense(17, activation='sigmoid')(x)
 
     model = Model(inputs=inputs, outputs=x)
@@ -48,13 +53,30 @@ def train(name, model, nc):
     print(history.history)
     from sklearn.metrics import fbeta_score
     p_valid = model.predict(x_valid, batch_size=128)
-    print(y_valid)
-    print(p_valid)
-    print(fbeta_score(y_valid, np.array(p_valid) > 0.5, beta=2, average='macro'))
+
+    print "accuracy dist: ", sum((p_valid > 0.5) == y_valid)/float(len(y_valid)), sum((p_valid > 0.6) == y_valid)/float(len(y_valid)), sum((p_valid > 0.7) == y_valid)/float(len(y_valid)), sum((p_valid > 0.8) == y_valid)/float(len(y_valid))
+
+    p_valid = p_valid > 0.5
+    print(fbeta_score(y_valid, p_valid, beta=2, average='macro'))
+    print "precision_recall_fscore: ",precision_recall_fscore_support(y_valid, p_valid, beta=2, average='macro', warn_for=[0,0])
+
+    zero_accuracy = np.array(sum(y_valid == 0), dtype=float) / len(y_valid)
+    print "constant func accuracy", np.array2string(np.max([1 - zero_accuracy, zero_accuracy], axis=0), max_line_width=200)
+    print "class accuracy: ", np.array2string(np.array(sum(y_valid == p_valid), dtype=float)/len(y_valid), max_line_width=200)
+    print "avg constant func accuracy", np.array2string(np.average(np.max([1 - zero_accuracy, zero_accuracy], axis=0)), max_line_width=200)
+    print "avg class accuracy: ", np.array2string(np.average(np.array(sum(y_valid == p_valid), dtype=float)/len(y_valid)), max_line_width=200)
+
+    print "nr correct: ", np.array2string(sum(y_valid == p_valid), max_line_width=200)
+    print "nr wrong: ", np.array2string(sum(y_valid != p_valid), max_line_width=200)
+    print
+    print "true possitive:", np.array2string(sum(np.logical_and(y_valid == p_valid, y_valid == 1)), max_line_width=200)
+    print "true negative: ", np.array2string(sum(np.logical_and(y_valid == p_valid, y_valid == 0)), max_line_width=200)
+    print "false positie: ", np.array2string(sum(np.logical_and(y_valid != p_valid, y_valid == 0)), max_line_width=200)
+    print "false negative:", np.array2string(sum(np.logical_and(y_valid != p_valid, y_valid == 1)), max_line_width=200)
 
 def run():
     net_config = config.net_config
-    model = get_model(net_config, (32, 32, 3))
+    model = get_model(net_config, (64, 64, 3))
     train("test", model, net_config)
 
 if __name__ == "__main__":
