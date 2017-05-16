@@ -21,7 +21,7 @@ INPUT_SHAPE = (64, 64, 3)
 def get_data(split=35000):
     filename = '../input/jpg_data.h5'
     if not os.path.exists(filename):
-        num_images = 40482
+        num_images = 40479
         dataset = h5py.File(filename, 'w')
         dataset.create_dataset('images_jpg', (num_images, INPUT_SHAPE[0], INPUT_SHAPE[1], INPUT_SHAPE[2]), dtype='f')
         dataset.create_dataset('classes', (num_images, 17), dtype='i')
@@ -49,7 +49,7 @@ def get_data(split=35000):
         stats = np.array(stats, np.float16)
         stats[stats == np.Inf] = 0
         stats /= np.max(np.max(stats))
-        dataset['stats'] = stats
+        dataset['stats'][:] = stats
 
         dataset.close()
 
@@ -79,7 +79,7 @@ def get_data_pickle():
         labels = list(set(flatten([l.split(' ') for l in df_train['tags'].values])))
         label_map = {l: i for i, l in enumerate(labels)}
 
-        for f, tags in tqdm(df_train.values[:20000], miniters=1000):
+        for f, tags in tqdm(df_train.values, miniters=1000):
             img_path = '../input/train-jpg/{}.jpg'.format(f)
             img = cv2.imread(img_path)
             targets = np.zeros(17)
@@ -99,9 +99,68 @@ def get_data_pickle():
         print(y.shape)
         print(stats.shape)
 
-        split = 15000
+        split = 30000
         x_train, x_valid, y_train, y_valid = x[:split], x[split:], y[:split], y[split:]
         stats_train, stats_valid = stats[:split], stats[split:]
+        with open(filename, 'wb') as f:
+            pickle.dump((x_train, x_valid, y_train, y_valid, stats_train, stats_valid), f)
+    return x_train, x_valid, y_train, y_valid, stats_train, stats_valid
+
+
+def get_equal_data_pickle():
+    total_labels = 200
+    filename = '../input/jpg_data_equal .pickle'
+    if os.path.exists(filename):
+        with open(filename, 'rb') as handle:
+            x_train, x_valid, y_train, y_valid, stats_train, stats_valid = pickle.load(handle)
+    else:
+        x_train = []
+        x_valid = []
+        y_train = []
+        y_valid = []
+        stats_train = []
+        stats_valid = []
+
+        df_train = pd.read_csv('../input/train.csv')
+        flatten = lambda l: [item for sublist in l for item in sublist]
+        labels = list(set(flatten([l.split(' ') for l in df_train['tags'].values])))
+        label_map = {l: i for i, l in enumerate(labels)}
+
+        num_labels = np.zeros(17)
+
+        for f, tags in tqdm(df_train.values, miniters=1000):
+            img_path = '../input/train-jpg/{}.jpg'.format(f)
+            img = cv2.imread(img_path)
+            targets = np.zeros(17)
+            for t in tags.split(' '):
+                targets[label_map[t]] = 1
+            if np.any((num_labels + targets) < total_labels) or True:
+                x_train.append(cv2.resize(img, (INPUT_SHAPE[0], INPUT_SHAPE[1])))
+                y_train.append(targets)
+                stats_train.append(get_features(img_path))
+                num_labels += targets
+            else:
+                x_valid.append(cv2.resize(img, (INPUT_SHAPE[0], INPUT_SHAPE[1])))
+                y_valid.append(targets)
+                stats_valid.append(get_features(img_path))
+
+        print(num_labels)
+        print(len(x_train))
+        print(len(x_valid))
+
+        y_train = np.array(y_train, np.uint8)
+        x_train = np.array(x_train, np.float16) / 255.
+        stats_train = np.array(stats_train, np.float16)
+        stats_train[stats_train == np.Inf] = 0
+        max_stats = np.max(np.max(stats_train))
+        stats_train /= max_stats
+
+        y_valid = np.array(y_valid, np.uint8)
+        x_valid = np.array(x_valid, np.float16) / 255.
+        stats_valid = np.array(stats_valid, np.float16)
+        stats_valid[stats_valid == np.Inf_valid] = 0
+        stats_valid /= max_stats
+
         with open(filename, 'wb') as f:
             pickle.dump((x_train, x_valid, y_train, y_valid, stats_train, stats_valid), f)
     return x_train, x_valid, y_train, y_valid, stats_train, stats_valid
@@ -274,9 +333,9 @@ class LearningRateChanger(Callback):
                   (self.monitor), RuntimeWarning)
 
         print(self.patience - self.wait, self.best, K.get_value(self.model.optimizer.lr))
-        if current > 0.85 and epoch % 10 == 0:
+        if current > 0.9 and epoch % 10 == 0:
             current_lr = K.get_value(self.model.optimizer.lr)
-            new_lr = current_lr * 0.8
+            new_lr = current_lr * 0.9
             print('new lr: ',  new_lr)
             K.set_value(self.model.optimizer.lr, new_lr)
 
@@ -355,7 +414,7 @@ def conv_block(kernel_size, filters, weight_decay=0., stride=1, batch_momentum=0
     return f
 
 
-def get_block(input, nc, batchnormalization, nb_filter1, nb_filter2, dropout1, dropout2, pooling):
+def get_block(input, nc, batchnormalization, nb_filter1, nb_filter2, dropout1, dropout2, pooling, kernel_size1=3, kernel_size2=3):
     block = input
     num_dims = len(K.int_shape(input))
 
@@ -369,9 +428,9 @@ def get_block(input, nc, batchnormalization, nb_filter1, nb_filter2, dropout1, d
         block = AveragePooling3D(pool_size=(2, 2, 2))(block)
 
     if num_dims == 4:
-        block = Conv2D(nb_filter1, (3, 3), kernel_initializer=nc['kernel_initializer'], padding=nc['padding'])(block)
+        block = Conv2D(nb_filter1, (kernel_size1, kernel_size1), kernel_initializer=nc['kernel_initializer'], padding=nc['padding'])(block)
     elif num_dims == 5:
-        block = Conv3D(nb_filter1, (3, 3, 3), kernel_initializer=nc['kernel_initializer'], padding=nc['padding'])(block)
+        block = Conv3D(nb_filter1, (kernel_size1, kernel_size1, kernel_size1), kernel_initializer=nc['kernel_initializer'], padding=nc['padding'])(block)
     if batchnormalization:
         block = BatchNormalization()(block)
     if nc['activation'] == 'CReLU':
@@ -385,9 +444,9 @@ def get_block(input, nc, batchnormalization, nb_filter1, nb_filter2, dropout1, d
         return block
 
     if num_dims == 4:
-        block = Conv2D(nb_filter2, (3, 3), kernel_initializer=nc['kernel_initializer'], padding=nc['padding'])(block)
+        block = Conv2D(nb_filter2, (kernel_size2, kernel_size2), kernel_initializer=nc['kernel_initializer'], padding=nc['padding'])(block)
     elif num_dims == 5:
-        block = Conv3D(nb_filter2, (3, 3, 3), kernel_initializer=nc['kernel_initializer'], padding=nc['padding'])(block)
+        block = Conv3D(nb_filter2, (kernel_size2, kernel_size2, kernel_size2), kernel_initializer=nc['kernel_initializer'], padding=nc['padding'])(block)
     if batchnormalization:
         block = BatchNormalization()(block)
     if nc['activation'] == 'CReLU':
@@ -418,6 +477,31 @@ def fbeta(y_true, y_pred, threshold_shift=0.):
     beta_squared = beta ** 2
     return (beta_squared + 1) * (precision * recall) / (beta_squared * precision + recall + K.epsilon())
 
+
+def fbeta_loss(y_true, y_pred, threshold_shift=0.):
+    beta = 2
+
+    # just in case of hipster activation at the final layer
+    y_pred = K.clip(y_pred, 0, 1)
+
+    # shifting the prediction threshold from .5 if needed
+    y_pred_bin = (y_pred + threshold_shift)
+
+    tp = K.sum((y_true * y_pred_bin)) + K.epsilon()
+    fp = K.sum((K.clip(y_pred_bin - y_true, 0, 1)))
+    fn = K.sum((K.clip(y_true - y_pred, 0, 1)))
+
+    precision = tp / (tp + fp)
+    recall = tp / (tp + fn)
+
+    beta_squared = beta ** 2
+    res = (beta_squared + 1) * (precision * recall) / (beta_squared * precision + recall + K.epsilon())
+    return -1 * res
+
+def binary_crossentropy_fbeta_loss(y_true, y_pred, threshold_shift=0.):
+    return 1 + fbeta_loss(y_true, y_pred) + K.mean(K.binary_crossentropy(y_pred, y_true), axis=-1)
+
+
 # https://www.kaggle.com/the1owl/planet-understanding-the-amazon-from-space/natural-growth-patterns-fractals-of-nature/run/1111331/notebook
 def get_features(path):
     try:
@@ -445,5 +529,56 @@ def get_features(path):
     except:
         print(path)
 
+
+class Adagrad(Optimizer):
+    """Adagrad optimizer.
+    It is recommended to leave the parameters of this optimizer
+    at their default values.
+    # Arguments
+        lr: float >= 0. Learning rate.
+        epsilon: float >= 0.
+        decay: float >= 0. Learning rate decay over each update.
+    # References
+        - [Adaptive Subgradient Methods for Online Learning and Stochastic Optimization](http://www.jmlr.org/papers/volume12/duchi11a/duchi11a.pdf)
+    """
+
+    def __init__(self, lr=0.01, epsilon=1e-8, decay=0., **kwargs):
+        super(Adagrad, self).__init__(**kwargs)
+        self.lr = K.variable(lr, name='lr')
+        self.epsilon = epsilon
+        self.decay = K.variable(decay, name='decay')
+        self.initial_decay = decay
+        self.iterations = K.variable(0., name='iterations')
+
+    def get_updates(self, params, constraints, loss):
+        grads = self.get_gradients(loss, params)
+        shapes = [K.get_variable_shape(p) for p in params]
+        accumulators = [K.zeros(shape) for shape in shapes]
+        self.weights = accumulators
+        self.updates = []
+
+        lr = self.lr
+        if self.initial_decay > 0:
+            lr *= (1. / (1. + self.decay * self.iterations))
+            self.updates.append(K.update_add(self.iterations, 1))
+
+        for p, g, a in zip(params, grads, accumulators):
+            new_a = a + K.square(g)  # update accumulator
+            self.updates.append(K.update(a, new_a))
+            new_p = p - lr * g / (K.sqrt(new_a) + self.epsilon)
+            # apply constraints
+            if p in constraints:
+                c = constraints[p]
+                new_p = c(new_p)
+            self.updates.append(K.update(p, new_p))
+        return self.updates
+
+    def get_config(self):
+        config = {'lr': float(K.get_value(self.lr)),
+                  'decay': float(K.get_value(self.decay)),
+                  'epsilon': self.epsilon}
+        base_config = super(Adagrad, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
 if __name__ == "__main__":
-    get_data()
+    get_equal_data_pickle()
